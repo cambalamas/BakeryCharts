@@ -3,72 +3,161 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"math"
 	"os"
-	"strings"
 
-	"gonum.org/v1/plot"
-	"gonum.org/v1/plot/plotter"
-	"gonum.org/v1/plot/plotutil"
+	"github.com/jung-kurt/gofpdf"
 )
 
-const logPath = "./logs/"
+type imgSize struct{ x, y float64 }
 
 const (
 	basicCost = 5
 	deluxCost = 6
+	imgPath   = "img/"
+	dataPath  = "data/"
+)
+
+var (
+	pdfOptPNG = gofpdf.ImageOptions{ImageType: "png"}
+	pltSize   = imgSize{x: 512., y: 512.}
 )
 
 func main() {
-	dPath := func(filename string) string {
-		return "data/" + strings.Title(strings.ToLower(filename)) + ".txt"
-	}
 
 	// Revenues of week, month and year for each dataset
 	// e.g. basicData["week"][0] is the revenue of fisrt week of basic cakes
-	basic := processFlatSheet(parseData(dPath("basic")), basicCost)
-	delux := processFlatSheet(parseData(dPath("delux")), deluxCost)
-	total := processFlatSheet(parseData(dPath("total")), 1)
+	basicVal := processFlatSheet(parseData(dataPath+"basic.txt"), basicCost)
+	deluxVal := processFlatSheet(parseData(dataPath+"delux.txt"), deluxCost)
+	totalVal := processFlatSheet(parseData(dataPath+"total.txt"), 1)
 
-	fmt.Printf("How much money did I make last year?\n"+
-		"Basic\tDelux\tTotal\n"+
-		"---------------------\n"+
-		"%v\t%v\t%v\n"+
-		"", basic["year"][0], delux["year"][0], total["year"][0])
+	basicQuant := processFlatSheet(parseData(dataPath+"basic.txt"), 1)
+	deluxQuant := processFlatSheet(parseData(dataPath+"delux.txt"), 1)
 
-	fmt.Printf("\n\n")
+	// ---------------------------------------------------------
+	// Plots generation
+	// ---------------------------------------------------------
 
-	fmt.Printf("How much money do I make in a typical month? (Months Average)\n"+
-		"Basic\tDelux\tTotal\n"+
-		"---------------------\n"+
-		"%v\t%v\t%v\n"+
-		"", dataAvg(basic["month"]), dataAvg(delux["month"]), dataAvg(total["month"]))
+	// Profit of last year (per month)
+	pltTitle := "Last year profit (per month)"
+	pltData := CPlotData{
+		"Basic": basicVal["month"][0:12],
+		"Delux": deluxVal["month"][0:12],
+		"Total": totalVal["month"][0:12],
+	}
+	lastYearProfitPerMonth := NewCPlot(pltTitle, "Time", "Profit", pltSize.x, pltSize.y, pltData)
+	lastYearProfitPerMonth.MakePNG(imgPath + "lastYearProfitPerMonth.png")
 
-	p, err := plot.New()
+	// Profit of last 3 months (per week)
+
+	// #1
+	month1ProfitPerWeek := NewCPlot("Last month profit (per week)", "Time", "Profit", pltSize.x, pltSize.y, CPlotData{
+		"Basic": basicVal["week"][0:4],
+		"Delux": deluxVal["week"][0:4],
+		"Total": totalVal["week"][0:4],
+	})
+	month1ProfitPerWeek.MakePNG(imgPath + "month1ProfitPerWeek.png")
+
+	// #2
+	month2ProfitPerWeek := NewCPlot("2 months ago profit (per week)", "Time", "Profit", pltSize.x, pltSize.y, CPlotData{
+		"Basic": basicVal["week"][4:8],
+		"Delux": deluxVal["week"][4:8],
+		"Total": totalVal["week"][4:8],
+	})
+	month2ProfitPerWeek.MakePNG(imgPath + "month2ProfitPerWeek.png")
+
+	// #3
+	month3ProfitPerWeek := NewCPlot("3 months ago profit (per week)", "Time", "Profit", pltSize.x, pltSize.y, CPlotData{
+		"Basic": basicVal["week"][8:12],
+		"Delux": deluxVal["week"][8:12],
+		"Total": totalVal["week"][8:12],
+	})
+	month3ProfitPerWeek.MakePNG(imgPath + "month3ProfitPerWeek.png")
+
+	// Cupcakes sold (per day, last month)
+	cupcakesSold := NewCPlot("Cupcakes sold (per day, last month)", "Time", "Quantity", pltSize.x, pltSize.y, CPlotData{
+		"Basic": basicQuant["day"][0:30],
+		"Delux": deluxQuant["day"][0:30],
+	})
+	cupcakesSold.MakePNG(imgPath + "cupcakesSold.png")
+
+	// ---------------------------------------------------------
+	// PDF generation
+	// ---------------------------------------------------------
+
+	// How much money did I make last year?
+	mlyB, mlyD, mlyT := basicVal["year"][0], deluxVal["year"][0], totalVal["year"][0]
+
+	// How much money do I make in a typical month?
+	mAvgB, mAvgD, mAvgT := dataAvg(basicVal["month"]), dataAvg(deluxVal["month"]), dataAvg(totalVal["month"])
+
+	// ---------------------------------------------------------
+
+	pdfName := "MatildaBakery.pdf"
+
+	pdf := gofpdf.New("P", "mm", "A4", "")
+	pdf.AddPage()
+	pdf.SetAutoPageBreak(true, 5.)
+	tr := pdf.UnicodeTranslatorFromDescriptor("") // Allow "€, ñ, ó, ù" and other non-english chars
+
+	// Title
+	pdf.SetFont("Arial", "B", 24)
+	pdf.Write(12, "Matilda's bakery")
+	pdf.Ln(15)
+
+	// Q1
+	pdf.SetFont("Arial", "B", 18)
+	pdf.Write(9, "How much money did I make last year?")
+	pdf.Ln(-1)
+
+	pdf.SetFont("Arial", "", 14)
+	pdf.Write(7, tr("Basic:\t"+fmt.Sprintf("%.2f", mlyB)+" €"))
+	pdf.Ln(-1)
+	pdf.Write(7, tr("Deluxe:\t"+fmt.Sprintf("%.2f", mlyD)+" €"))
+	pdf.Ln(-1)
+	pdf.Write(7, tr("Total:\t"+fmt.Sprintf("%.2f", mlyT)+" €"))
+	pdf.Ln(15)
+
+	// Q2
+	pdf.SetFont("Arial", "B", 18)
+	pdf.Write(9, "How much money do I make in a typical month?")
+	pdf.Ln(-1)
+
+	pdf.SetFont("Arial", "", 14)
+	pdf.Write(7, tr("Basic:\t"+fmt.Sprintf("%.2f", mAvgB)+" €"))
+	pdf.Ln(-1)
+	pdf.Write(7, tr("Deluxe:\t"+fmt.Sprintf("%.2f", mAvgD)+" €"))
+	pdf.Ln(-1)
+	pdf.Write(7, tr("Total:\t"+fmt.Sprintf("%.2f", mAvgT)+" €"))
+	pdf.Ln(15)
+
+	// Charts
+	pdf.SetFont("Arial", "B", 18)
+	pdf.Write(7, tr("Some cool charts "))
+	pdf.Ln(25)
+
+	pw, _ := pdf.GetPageSize()
+	ps := pw * 0.65
+	pdfInsertImg := func(path string) {
+		pdf.ImageOptions(path, 30, -1, ps, ps, true, gofpdf.ImageOptions{ImageType: "png"}, 0, "")
+	}
+
+	// Get images from its folder
+	images, err := ioutil.ReadDir(imgPath)
 	if err != nil {
-		log.Fatalf("Could not create the plot: %v", err)
+		log.Fatalf("Could not read %q: %v", imgPath, err)
+	}
+	for _, img := range images {
+		pdfInsertImg(imgPath + img.Name())
 	}
 
-	p.Title.Text = "Profit per month in last 12 months"
-	p.Title.Font.Size = 15
-	p.X.Label.Text = "Time"
-	p.Y.Label.Text = "Profit"
-
-	//  Plot per moth profit of last year -> [0:11]
-	err = plotutil.AddLinePoints(p,
-		"Basic", sliceToPlotter(basic["month"][0:11]),
-		"Delux", sliceToPlotter(delux["month"][0:11]),
-		"Total", sliceToPlotter(total["month"][0:11]),
-	)
-	if err != nil {
-		panic(err)
+	if err := pdf.OutputFileAndClose(pdfName); err != nil {
+		log.Fatalf("Could not create PDF %q: %v", pdfName, err)
 	}
 
-	if err := p.Save(512, 512, "points.png"); err != nil {
-		panic(err)
-	}
-
+	// ---------------------------------------------------------
 }
 
 func parseData(path string) []float64 {
@@ -107,31 +196,33 @@ func processFlatSheet(arr []float64, mult float64) map[string][]float64 {
 
 	currWeek, currMonth, currYear := 0, 0, 0
 	daysWeek, daysMonth, daysYear := 0, 0, 0
+
+	var day []float64
 	week, month, year := []float64{0.}, []float64{0.}, []float64{0.}
 
 	for i := len(arr) - 1; i >= 0; i-- {
 		currVal := arr[i] * mult
 
+		day = append(day, currVal)
+
 		week[currWeek] += currVal
 		daysWeek++
-		month[currMonth] += currVal
-		daysMonth++
-		year[currYear] += currVal
-		daysYear++
-
-		// Week reset
 		if daysWeek >= 7 {
 			daysWeek = 0
 			currWeek++
 			week = append(week, 0.)
 		}
-		// Month reset
+
+		month[currMonth] += currVal
+		daysMonth++
 		if daysMonth >= 30 {
 			daysMonth = 0
 			currMonth++
 			month = append(month, 0.)
 		}
-		// Year reset
+
+		year[currYear] += currVal
+		daysYear++
 		if daysYear >= 365 {
 			daysYear = 0
 			currYear++
@@ -140,6 +231,7 @@ func processFlatSheet(arr []float64, mult float64) map[string][]float64 {
 	}
 
 	return map[string][]float64{
+		"day":   day,
 		"week":  week,
 		"month": month,
 		"year":  year,
@@ -160,12 +252,3 @@ func dataAvg(data []float64) float64 {
 
 //
 // Plotter helpers
-
-func sliceToPlotter(data []float64) plotter.XYs {
-	pts := make(plotter.XYs, len(data))
-	for i := range pts {
-		pts[i].X = float64(i)
-		pts[i].Y = data[i]
-	}
-	return pts
-}
