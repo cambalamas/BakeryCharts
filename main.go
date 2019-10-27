@@ -16,8 +16,10 @@ type imgSize struct{ x, y float64 }
 const (
 	basicCost = 5
 	deluxCost = 6
-	imgPath   = "img/"
 	dataPath  = "data/"
+	distPath  = "dist/"
+	imgPath   = distPath + "img/"
+	pdfPath   = distPath + "MatildaBakery.pdf"
 )
 
 var (
@@ -26,6 +28,8 @@ var (
 )
 
 func main() {
+
+	_ = os.Mkdir(imgPath, 0755)
 
 	// Revenues of week, month and year for each dataset
 	// e.g. basicData["week"][0] is the revenue of fisrt week of basic cakes
@@ -95,8 +99,6 @@ func main() {
 
 	// ---------------------------------------------------------
 
-	pdfName := "MatildaBakery.pdf"
-
 	pdf := gofpdf.New("P", "mm", "A4", "")
 	pdf.AddPage()
 	pdf.SetAutoPageBreak(true, 5.)
@@ -140,9 +142,7 @@ func main() {
 
 	pw, _ := pdf.GetPageSize()
 	ps := pw * 0.65
-	pdfInsertImg := func(path string) {
-		pdf.ImageOptions(path, 30, -1, ps, ps, true, gofpdf.ImageOptions{ImageType: "png"}, 0, "")
-	}
+	pdfPNG := gofpdf.ImageOptions{ImageType: "png"}
 
 	// Get images from its folder
 	images, err := ioutil.ReadDir(imgPath)
@@ -150,11 +150,11 @@ func main() {
 		log.Fatalf("Could not read %q: %v", imgPath, err)
 	}
 	for _, img := range images {
-		pdfInsertImg(imgPath + img.Name())
+		pdf.ImageOptions(imgPath+img.Name(), 30, -1, ps, ps, true, pdfPNG, 0, "")
 	}
 
-	if err := pdf.OutputFileAndClose(pdfName); err != nil {
-		log.Fatalf("Could not create PDF %q: %v", pdfName, err)
+	if err := pdf.OutputFileAndClose(pdfPath); err != nil {
+		log.Fatalf("Could not create PDF %q: %v", pdfPath, err)
 	}
 
 	// ---------------------------------------------------------
