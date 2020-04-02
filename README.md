@@ -3,7 +3,7 @@
 ## Three files
 - Basic.txt
 - Delux.txt
-- Total.tx
+- Total.txt
 
 ## Questions to answer
 - How much money did I make last year?
